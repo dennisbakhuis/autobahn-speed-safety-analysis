@@ -51,18 +51,37 @@ if MOTORWAY_CACHE.exists():
     gdf_motorways = gpd.read_file(MOTORWAY_CACHE)
     print(f"  {len(gdf_motorways):,} motorway segments loaded")
 else:
-    print("  Downloading from OSM (may take several minutes)...")
-    G = ox.graph_from_place(
-        "Germany",
-        network_type="drive",
-        custom_filter='["highway"~"motorway|motorway_link"]',
-        retain_all=False,
-    )
-    _, edges = ox.graph_to_gdfs(G)
-    gdf_motorways = edges[["geometry", "highway", "maxspeed", "name", "ref"]].copy()
-    gdf_motorways = gdf_motorways.reset_index(drop=True)
+    print("  Downloading German Autobahn network from OSM by Bundesland...")
+    # Download state-by-state to avoid Overpass timeout on a single Germany query
+    BUNDESLAENDER = [
+        "Baden-Württemberg, Germany", "Bayern, Germany", "Berlin, Germany",
+        "Brandenburg, Germany", "Bremen, Germany", "Hamburg, Germany",
+        "Hessen, Germany", "Mecklenburg-Vorpommern, Germany",
+        "Niedersachsen, Germany", "Nordrhein-Westfalen, Germany",
+        "Rheinland-Pfalz, Germany", "Saarland, Germany",
+        "Sachsen, Germany", "Sachsen-Anhalt, Germany",
+        "Schleswig-Holstein, Germany", "Thüringen, Germany",
+    ]
+    frames = []
+    for state in BUNDESLAENDER:
+        try:
+            G = ox.graph_from_place(
+                state,
+                network_type="drive",
+                custom_filter='["highway"~"motorway|motorway_link"]',
+                retain_all=False,
+            )
+            _, edges = ox.graph_to_gdfs(G)
+            keep = [c for c in ["geometry", "highway", "maxspeed", "name", "ref"] if c in edges.columns]
+            frames.append(edges[keep].copy())
+            print(f"    {state.split(',')[0]}: {len(edges):,} segments")
+        except Exception as e:
+            print(f"    {state.split(',')[0]}: FAILED — {e}")
+
+    gdf_motorways = pd.concat(frames, ignore_index=True)
+    gdf_motorways = gdf_motorways.drop_duplicates(subset=["geometry"]).reset_index(drop=True)
     gdf_motorways.to_file(MOTORWAY_CACHE, driver="GPKG")
-    print(f"  Downloaded and cached {len(gdf_motorways):,} segments")
+    print(f"  Downloaded and cached {len(gdf_motorways):,} total segments")
 
 # ── 3. Classify speed limit sections ─────────────────────────────────────────
 print("\n" + "=" * 60)
