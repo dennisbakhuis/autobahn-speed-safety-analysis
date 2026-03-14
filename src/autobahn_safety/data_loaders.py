@@ -73,12 +73,36 @@ def load_unfallatlas(data_dir: Path, years: list[int]) -> pd.DataFrame:
         if not candidates:
             print(f"Warning: no Unfallatlas file found for {year}")
             continue
-        df = pd.read_csv(candidates[0], sep=";", encoding="latin-1", low_memory=False)
+        # Try UTF-8 with BOM first (some years), fall back to latin-1
+        try:
+            df = pd.read_csv(candidates[0], sep=";", encoding="utf-8-sig", low_memory=False)
+        except UnicodeDecodeError:
+            df = pd.read_csv(candidates[0], sep=";", encoding="latin-1", low_memory=False)
+
+        # Normalise column names: strip whitespace and BOM remnants
+        df.columns = df.columns.str.strip().str.lstrip("\ufeff")
+
         df["year"] = year
         frames.append(df)
     if not frames:
         return pd.DataFrame()
-    return pd.concat(frames, ignore_index=True)
+
+    # Concat across years — keep only the common core columns to avoid NaN explosion
+    # from schema differences between years
+    core_cols = [
+        "ULAND", "UREGBEZ", "UKREIS", "UGEMEINDE",
+        "UJAHR", "UMONAT", "USTUNDE", "UWOCHENTAG",
+        "UKATEGORIE", "UART", "UTYP1", "ULICHTVERH",
+        "IstRad", "IstPKW", "IstFuss", "IstKrad", "IstGkfz",
+        "LINREFX", "LINREFY", "XGCSWGS84", "YGCSWGS84",
+        "year",
+    ]
+    available = [c for c in core_cols if any(c in df.columns for df in frames)]
+    trimmed = []
+    for df in frames:
+        cols = [c for c in available if c in df.columns]
+        trimmed.append(df[cols])
+    return pd.concat(trimmed, ignore_index=True)
 
 
 def fetch_destatis_genesis(
