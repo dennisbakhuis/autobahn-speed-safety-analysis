@@ -48,7 +48,10 @@ def download_unfallatlas(year: int, output_dir: Path) -> Path:
     with zipfile.ZipFile(buf) as zf:
         zf.extractall(output_dir)
 
-    return output_dir
+    # Find the actual data file (structure varies by year: flat CSV, subdir CSV, or subdir TXT)
+    data_files = list(output_dir.rglob("*LinRef*"))
+    data_files = [f for f in data_files if f.suffix.lower() in (".csv", ".txt") and f.is_file()]
+    return data_files[0] if data_files else output_dir
 
 
 def load_unfallatlas(data_dir: Path, years: list[int]) -> pd.DataFrame:
@@ -63,14 +66,14 @@ def load_unfallatlas(data_dir: Path, years: list[int]) -> pd.DataFrame:
     """
     frames = []
     for year in years:
-        files = list(Path(data_dir).glob(f"*{year}*.csv"))
-        if not files:
-            # try subdirectory per year
-            files = list(Path(data_dir).glob(f"{year}/*.csv"))
-        if not files:
+        year_dir = Path(data_dir) / str(year)
+        # Search recursively for the LinRef data file (extension varies: .csv or .txt)
+        candidates = list(year_dir.rglob("*LinRef*")) if year_dir.exists() else []
+        candidates = [f for f in candidates if f.suffix.lower() in (".csv", ".txt") and f.is_file()]
+        if not candidates:
             print(f"Warning: no Unfallatlas file found for {year}")
             continue
-        df = pd.read_csv(files[0], sep=";", encoding="latin-1", low_memory=False)
+        df = pd.read_csv(candidates[0], sep=";", encoding="latin-1", low_memory=False)
         df["year"] = year
         frames.append(df)
     if not frames:
