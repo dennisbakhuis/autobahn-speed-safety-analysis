@@ -221,6 +221,102 @@ def load_destatis_autobahn(xlsx_path: Path) -> pd.DataFrame:
     return df.sort_values("year").reset_index(drop=True)
 
 
+def download_bron(
+    year: int,
+    output_dir: Path,
+    *,
+    force: bool = False,
+) -> Path:
+    """Download one year of BRON (Bestand geRegistreerde Ongevallen Nederland) data.
+
+    Data is served as a ZIP from downloads.rijkswaterstaatdata.nl — no authentication,
+    no pagination. Available 2003–present. Each year ZIP contains accident records,
+    party records, and road network reference files.
+
+    The accident file (Ongevallengegevens/ongevallen.txt) is a quoted CSV with 66 columns,
+    including MAXSNELHD (speed limit) which directly identifies motorway accidents.
+
+    URL pattern: https://downloads.rijkswaterstaatdata.nl/bron/01-01-{YEAR}_31-12-{YEAR}.zip
+    Internal path: 01-01-{YEAR}_31-12-{YEAR}/Ongevallengegevens/ongevallen.txt
+
+    Args:
+        year: Year to download (2003–2024).
+        output_dir: Directory to save the extracted accident CSV.
+        force: Re-download even if file already exists (default: False).
+
+    Returns:
+        Path to the extracted accidents CSV file.
+    """
+    output_dir = Path(output_dir)
+    output_dir.mkdir(parents=True, exist_ok=True)
+
+    out_path = output_dir / f"bron_accidents_{year}.csv"
+    if not force and out_path.exists():
+        print(f"BRON {year}: already downloaded ({out_path.name})")
+        return out_path
+
+    url = f"https://downloads.rijkswaterstaatdata.nl/bron/01-01-{year}_31-12-{year}.zip"
+    print(f"Downloading BRON {year}...")
+    resp = requests.get(url, stream=True, timeout=300)
+    resp.raise_for_status()
+
+    total = int(resp.headers.get("content-length", 0))
+    buf = io.BytesIO()
+    with tqdm(total=total, unit="B", unit_scale=True, desc=f"BRON {year}") as pbar:
+        for chunk in resp.iter_content(chunk_size=65536):
+            buf.write(chunk)
+            pbar.update(len(chunk))
+
+    buf.seek(0)
+    folder = f"01-01-{year}_31-12-{year}"
+    with zipfile.ZipFile(buf) as zf:
+        inner_path = f"{folder}/Ongevallengegevens/ongevallen.txt"
+        with zf.open(inner_path) as f:
+            df = pd.read_csv(f, dtype=str, low_memory=False)
+
+    df.to_csv(out_path, index=False)
+    print(f"BRON {year}: {len(df):,} records → {out_path.name}")
+    return out_path
+
+
+def load_bron(data_dir: Path, years: list[int]) -> pd.DataFrame:
+    """Load cached BRON accident CSV files for the given years.
+
+    Expects files named bron_accidents_{year}.csv in data_dir,
+    as produced by download_bron().
+
+    Key columns for analysis:
+        JAAR_VKL  : Year of accident
+        AP3_CODE  : Severity code ('DOD'=fatal, 'ZGO'=serious injury, 'LOO'=slight, 'UMS'=material)
+        BEBKOM    : Location type ('BI'=inside built-up area, 'BU'=outside)
+        MAXSNELHD : Posted speed limit in km/h
+        GME_NAAM  : Municipality
+        PVE_NAAM  : Province
+        WVK_ID    : Road section ID
+
+    Motorway filter: MAXSNELHD in ['100', '120', '130'] and BEBKOM == 'BU'
+
+    Args:
+        data_dir: Directory containing bron_accidents_{year}.csv files.
+        years: List of years to load.
+
+    Returns:
+        Concatenated DataFrame.
+    """
+    frames = []
+    for year in years:
+        path = Path(data_dir) / f"bron_accidents_{year}.csv"
+        if not path.exists():
+            print(f"Warning: BRON {year} not found at {path}")
+            continue
+        df = pd.read_csv(path, dtype=str, low_memory=False)
+        frames.append(df)
+    if not frames:
+        return pd.DataFrame()
+    return pd.concat(frames, ignore_index=True)
+
+
+# Keep fetch_rws_accidents as a legacy alias for backward compatibility
 def fetch_rws_accidents(
     *,
     year: int | None = None,
@@ -228,100 +324,20 @@ def fetch_rws_accidents(
     force: bool = False,
     batch_size: int = 2000,
 ) -> pd.DataFrame:
-    """Fetch Dutch accident records from the Rijkswaterstaat ArcGIS FeatureServer.
+    """[DEPRECATED] Use download_bron() instead.
 
-    This is the BRON dataset exposed via a public ArcGIS REST API — no download
-    or registration required. Contains 2.6M records from 2010 to present.
-
-    Key fields:
-        JAAR_VKL    : Year of accident
-        AP3_CODE    : Severity ('Dodelijk', 'Letsel', 'Uitsluitend materiele schade')
-        BEBKOM      : Built-up area ('Binnen' / 'Buiten')
-        MAXSNELHD   : Posted speed limit (km/h) — 130 = motorway
-        WVK_ID      : Road section ID (joinable with NWB road network)
-        HECTOMETER  : Hectometre marker (only on national roads)
-        GME_NAAM    : Municipality name
-        PVE_NAAM    : Province name
-        geometry    : Point geometry (WGS84 lon/lat)
-
-    Motorway filter: MAXSNELHD=130 and BEBKOM='Buiten' (or HECTOMETER IS NOT NULL)
-
-    Args:
-        year: If provided, fetch only that year. Otherwise fetches all years.
-        output_dir: If provided, cache results as CSV here (skipped if cached).
-        force: Re-download even if cached.
-        batch_size: Records per API request (max 2000).
-
-    Returns:
-        DataFrame with all matching accident records.
+    Fetches Dutch accident records from the Rijkswaterstaat ArcGIS FeatureServer (slow).
+    The direct BRON ZIP download via download_bron() is preferred.
     """
-    base_url = (
-        "https://services.arcgis.com/nSZVuSZjHpEZZbRo/arcgis/rest/services/"
-        "Verkeersongevallen/FeatureServer/0/query"
+    import warnings
+    warnings.warn(
+        "fetch_rws_accidents is deprecated. Use download_bron() instead for faster bulk downloads.",
+        DeprecationWarning,
+        stacklevel=2,
     )
-    out_fields = (
-        "JAAR_VKL,AP3_CODE,BEBKOM,MAXSNELHD,WVK_ID,HECTOMETER,"
-        "GME_NAAM,PVE_NAAM,PVE_CODE,DAGTYPE,AOL_ID,NIVEAUKOP,WSE_ID"
-    )
-
-    if output_dir:
-        output_dir = Path(output_dir)
-        output_dir.mkdir(parents=True, exist_ok=True)
-        fname = f"rws_accidents_{year}.csv" if year else "rws_accidents_all.csv"
-        cache_path = output_dir / fname
-        if not force and cache_path.exists():
-            print(f"RWS accidents {year or 'all'}: already cached ({cache_path.name})")
-            return pd.read_csv(cache_path)
-
-    where = f"JAAR_VKL={year}" if year else "1=1"
-
-    # Get total count
-    count_resp = requests.get(
-        base_url,
-        params={"where": where, "returnCountOnly": "true", "f": "json"},
-        timeout=30,
-    )
-    count_resp.raise_for_status()
-    total = count_resp.json().get("count", 0)
-    print(f"RWS accidents {year or 'all'}: {total:,} records to fetch")
-
-    all_records: list[dict] = []
-    offset = 0
-    with tqdm(total=total, unit="records", desc=f"RWS {year or 'all'}") as pbar:
-        while offset < total:
-            resp = requests.get(
-                base_url,
-                params={
-                    "where": where,
-                    "outFields": out_fields,
-                    "resultOffset": offset,
-                    "resultRecordCount": batch_size,
-                    "returnGeometry": "true",
-                    "outSR": "4326",
-                    "f": "json",
-                },
-                timeout=60,
-            )
-            resp.raise_for_status()
-            features = resp.json().get("features", [])
-            if not features:
-                break
-            for feat in features:
-                row = feat["attributes"].copy()
-                geom = feat.get("geometry") or {}
-                row["lon"] = geom.get("x")
-                row["lat"] = geom.get("y")
-                all_records.append(row)
-            pbar.update(len(features))
-            offset += len(features)
-
-    df = pd.DataFrame(all_records)
-
-    if output_dir:
-        df.to_csv(cache_path, index=False)
-        print(f"Saved to {cache_path}")
-
-    return df
+    if year is not None and output_dir is not None:
+        return pd.read_csv(download_bron(year, output_dir, force=force))
+    raise ValueError("Use download_bron(year, output_dir) directly.")
 
 
 def fetch_cbs_odata(
