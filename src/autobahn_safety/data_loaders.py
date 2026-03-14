@@ -251,7 +251,7 @@ def download_bron(
     output_dir.mkdir(parents=True, exist_ok=True)
 
     out_path = output_dir / f"bron_accidents_{year}.csv"
-    if not force and out_path.exists():
+    if not force and out_path.exists() and out_path.stat().st_size > 1024:
         print(f"BRON {year}: already downloaded ({out_path.name})")
         return out_path
 
@@ -268,10 +268,15 @@ def download_bron(
             pbar.update(len(chunk))
 
     buf.seek(0)
-    folder = f"01-01-{year}_31-12-{year}"
     with zipfile.ZipFile(buf) as zf:
-        inner_path = f"{folder}/Ongevallengegevens/ongevallen.txt"
-        with zf.open(inner_path) as f:
+        # Scan for the accidents file — folder name varies slightly between years
+        candidates = [n for n in zf.namelist() if n.endswith("Ongevallengegevens/ongevallen.txt")]
+        if not candidates:
+            raise FileNotFoundError(
+                f"BRON {year}: cannot find Ongevallengegevens/ongevallen.txt in ZIP. "
+                f"Contents: {zf.namelist()[:10]}"
+            )
+        with zf.open(candidates[0]) as f:
             df = pd.read_csv(f, dtype=str, low_memory=False)
 
     df.to_csv(out_path, index=False)
