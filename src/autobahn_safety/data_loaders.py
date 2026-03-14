@@ -21,7 +21,7 @@ def download_unfallatlas(year: int, output_dir: Path) -> Path:
     2016 onwards.
 
     Args:
-        year: The year to download (2016–2023 currently available).
+        year: The year to download (2016–2024 available).
         output_dir: Directory to save extracted files.
 
     Returns:
@@ -30,7 +30,7 @@ def download_unfallatlas(year: int, output_dir: Path) -> Path:
     Raises:
         requests.HTTPError: If the download fails.
     """
-    url = f"https://unfallatlas.statistikportal.de/_data/Unfallorte{year}_EPSG25832_CSV.zip"
+    url = f"https://www.opengeodata.nrw.de/produkte/transport_verkehr/unfallatlas/Unfallorte{year}_EPSG25832_CSV.zip"
     output_dir = Path(output_dir)
     output_dir.mkdir(parents=True, exist_ok=True)
 
