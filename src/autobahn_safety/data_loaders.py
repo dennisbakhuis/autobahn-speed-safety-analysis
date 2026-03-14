@@ -120,57 +120,105 @@ def load_unfallatlas(data_dir: Path, years: list[int]) -> pd.DataFrame:
     return pd.concat(trimmed, ignore_index=True)
 
 
-def fetch_destatis_genesis(
-    table_id: str,
-    *,
-    start_year: int = 2010,
-    end_year: int = 2023,
-) -> pd.DataFrame:
-    """Fetch aggregated accident statistics from Destatis GENESIS-Online API.
+def download_destatis_timeseries(output_dir: Path, *, force: bool = False) -> Path:
+    """Download the Destatis accident statistics time series Excel workbook.
 
-    Requires free registration at https://www-genesis.destatis.de/
-    Set DESTATIS_USERNAME and DESTATIS_PASSWORD in your .env file.
+    This replaces the old GENESIS-Online REST API (which has been decommissioned).
+    Downloads the official "Statistischer Bericht Verkehrsunfälle — Zeitreihen" Excel
+    publication directly from destatis.de.
 
-    Useful tables:
-        - "46241-0023": Accidents by category and location type (Autobahn, etc.)
-        - "46241-0031": Accidents on motorways specifically
-        - "46241-0010": Overview by year
+    The workbook contains all road-type breakdowns including Autobahn (sheet 3.1_(4)).
+    No registration required.
 
     Args:
-        table_id: GENESIS table ID (e.g. "46241-0023").
-        start_year: Start of time series.
-        end_year: End of time series.
+        output_dir: Directory to save the Excel file.
+        force: Re-download even if file already exists (default: False).
 
     Returns:
-        DataFrame with the requested table data.
+        Path to the downloaded Excel file.
 
     Raises:
-        requests.HTTPError: If the API request fails.
-        ValueError: If credentials are not set.
+        requests.HTTPError: If the download fails.
     """
-    load_dotenv()
-    username = os.getenv("DESTATIS_USERNAME", "")
-    password = os.getenv("DESTATIS_PASSWORD", "")
-    if not username or not password:
-        raise ValueError(
-            "Set DESTATIS_USERNAME and DESTATIS_PASSWORD in .env — "
-            "register free at https://www-genesis.destatis.de/"
-        )
+    output_dir = Path(output_dir)
+    output_dir.mkdir(parents=True, exist_ok=True)
 
-    base_url = "https://www-genesis.destatis.de/api/rest/2020"
-    params = {
-        "username": username,
-        "password": password,
-        "name": table_id,
-        "startyear": str(start_year),
-        "endyear": str(end_year),
-        "language": "en",
-    }
-    resp = requests.get(f"{base_url}/data/tablefile", params=params, timeout=60)
+    out_path = output_dir / "destatis_verkehrsunfaelle_zeitreihen.xlsx"
+    if not force and out_path.exists():
+        print(f"Destatis timeseries: already downloaded ({out_path.name})")
+        return out_path
+
+    url = (
+        "https://www.destatis.de/DE/Themen/Gesellschaft-Umwelt/Verkehrsunfaelle/"
+        "Publikationen/Downloads-Verkehrsunfaelle/"
+        "verkehrsunfaelle-zeitreihen-xlsx-5462403.xlsx?__blob=publicationFile&v=19"
+    )
+    print("Downloading Destatis accident time series (~36 MB)...")
+    resp = requests.get(url, stream=True, timeout=120)
     resp.raise_for_status()
 
-    # GENESIS returns semicolon-separated CSV with metadata rows at the top
-    return pd.read_csv(io.StringIO(resp.text), sep=";", skiprows=5, encoding="utf-8")
+    total = int(resp.headers.get("content-length", 0))
+    with open(out_path, "wb") as f, tqdm(total=total, unit="B", unit_scale=True, desc="Destatis timeseries") as pbar:
+        for chunk in resp.iter_content(chunk_size=8192):
+            f.write(chunk)
+            pbar.update(len(chunk))
+
+    print(f"Saved to {out_path}")
+    return out_path
+
+
+def load_destatis_autobahn(xlsx_path: Path) -> pd.DataFrame:
+    """Load Autobahn accident statistics from the Destatis time series workbook.
+
+    Reads sheet '3.1_(4)' which contains accidents on motorways (Autobahnen)
+    going back to the 1950s. Returns a clean long-format DataFrame.
+
+    Args:
+        xlsx_path: Path to the destatis Zeitreihen Excel file.
+
+    Returns:
+        DataFrame with columns: year, accidents_total, accidents_personal_injury,
+        accidents_fatal, killed, injured.
+    """
+    import openpyxl
+
+    wb = openpyxl.load_workbook(xlsx_path, read_only=True, data_only=True)
+    ws = wb["3.1_(4)"]
+
+    rows = list(ws.iter_rows(values_only=True))
+
+    # Find the header row (contains year-like integer values in the first column)
+    data_rows = []
+    for row in rows:
+        first = row[0]
+        if isinstance(first, (int, float)) and 1950 <= int(first) <= 2030:
+            data_rows.append(row)
+
+    if not data_rows:
+        raise ValueError("Could not find data rows in sheet 3.1_(4)")
+
+    # Column layout (Autobahn sheet):
+    # 0: year | 1: accidents_total | 2: accidents_personal_injury
+    # 3: accidents_fatal (with killed) | 4: accidents_injury_only
+    # 5: schwerwiegende_sachschaden | 6+: Verunglückte breakdown
+    records = []
+    for row in data_rows:
+        def _int(v):  # noqa: E306
+            try:
+                return int(v) if v not in (None, ".", "") else None
+            except (ValueError, TypeError):
+                return None
+
+        records.append({
+            "year": _int(row[0]),
+            "accidents_total": _int(row[1]),
+            "accidents_personal_injury": _int(row[2]),
+            "accidents_fatal": _int(row[3]),
+        })
+
+    df = pd.DataFrame(records).dropna(subset=["year"])
+    df["year"] = df["year"].astype(int)
+    return df.sort_values("year").reset_index(drop=True)
 
 
 def fetch_cbs_odata(
