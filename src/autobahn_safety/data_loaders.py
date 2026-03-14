@@ -13,27 +13,40 @@ from dotenv import load_dotenv
 from tqdm import tqdm
 
 
-def download_unfallatlas(year: int, output_dir: Path) -> Path:
+def download_unfallatlas(year: int, output_dir: Path, *, force: bool = False) -> Path:
     """Download and extract Unfallatlas CSV data for a given year.
 
     The Unfallatlas provides GPS-located individual accident records for all of
     Germany, published jointly by the Statistische Landesämter. Available from
     2016 onwards.
 
+    Skips the download if the data file is already present, unless force=True.
+
     Args:
         year: The year to download (2016–2024 available).
         output_dir: Directory to save extracted files.
+        force: Re-download even if data already exists (default: False).
 
     Returns:
-        Path to the directory containing extracted files.
+        Path to the extracted data file.
 
     Raises:
         requests.HTTPError: If the download fails.
     """
-    url = f"https://www.opengeodata.nrw.de/produkte/transport_verkehr/unfallatlas/Unfallorte{year}_EPSG25832_CSV.zip"
     output_dir = Path(output_dir)
     output_dir.mkdir(parents=True, exist_ok=True)
 
+    # Skip if already downloaded (check for LinRef data file, either .csv or .txt)
+    if not force:
+        existing = [
+            f for f in output_dir.rglob("*LinRef*")
+            if f.suffix.lower() in (".csv", ".txt") and f.is_file()
+        ]
+        if existing:
+            print(f"{year}: already downloaded ({existing[0].name})")
+            return existing[0]
+
+    url = f"https://www.opengeodata.nrw.de/produkte/transport_verkehr/unfallatlas/Unfallorte{year}_EPSG25832_CSV.zip"
     response = requests.get(url, stream=True, timeout=120)
     response.raise_for_status()
 
@@ -49,8 +62,10 @@ def download_unfallatlas(year: int, output_dir: Path) -> Path:
         zf.extractall(output_dir)
 
     # Find the actual data file (structure varies by year: flat CSV, subdir CSV, or subdir TXT)
-    data_files = list(output_dir.rglob("*LinRef*"))
-    data_files = [f for f in data_files if f.suffix.lower() in (".csv", ".txt") and f.is_file()]
+    data_files = [
+        f for f in output_dir.rglob("*LinRef*")
+        if f.suffix.lower() in (".csv", ".txt") and f.is_file()
+    ]
     return data_files[0] if data_files else output_dir
 
 
