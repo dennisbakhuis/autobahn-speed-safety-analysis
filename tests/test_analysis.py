@@ -60,4 +60,4 @@ def test_severity_index() -> None:
     fatalities = pd.Series([10, 20, 15])
     total = pd.Series([100, 200, 150])
     si = severity_index(fatalities, total)
-    assert all(si == pytest.approx(0.1))
+    assert list(si) == pytest.approx([0.1, 0.1, 0.1])

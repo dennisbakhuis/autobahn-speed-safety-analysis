@@ -64,6 +64,8 @@ def clean_unfallatlas(df: pd.DataFrame) -> pd.DataFrame:
         df["weekday"] = df["UWOCHENTAG"].map(WEEKDAY_MAP)
 
     # Location type: INN_ORT = 0 → outside built-up area (Autobahn, Bundesstraße, etc.)
+    # Note: INN_ORT is not present in all Unfallatlas years.
+    # Road type classification is done via spatial join with OSM in notebook 03.
     if "INN_ORT" in df.columns:
         df["outside_built_up_area"] = df["INN_ORT"] == 0
 
@@ -72,9 +74,13 @@ def clean_unfallatlas(df: pd.DataFrame) -> pd.DataFrame:
     df = df.rename(columns={k: v for k, v in coord_map.items() if k in df.columns})
 
     # Parse coordinates to float (German CSVs use comma as decimal separator)
+    # Check for both legacy object dtype and pandas 2+/3+ StringDtype
     for col in ("lon", "lat"):
-        if col in df.columns and df[col].dtype == object:
-            df[col] = df[col].str.replace(",", ".").astype(float)
+        if col in df.columns and not pd.api.types.is_float_dtype(df[col]):
+            df[col] = pd.to_numeric(
+                df[col].astype(str).str.replace(",", ".", regex=False),
+                errors="coerce",
+            )
 
     return df
 

@@ -357,14 +357,20 @@ def fetch_cbs_odata(
         params["$select"] = ",".join(select_cols)
 
     all_records: list[dict] = []
-    url: str | None = base_url
+    page_size = 9999  # CBS rejects requests that would return > 10000 records at once
+    skip = 0
 
-    while url:
-        resp = requests.get(url, params=params, timeout=60)
+    while True:
+        page_params = dict(params)
+        page_params["$top"] = str(page_size)
+        page_params["$skip"] = str(skip)
+        resp = requests.get(base_url, params=page_params, timeout=60)
         resp.raise_for_status()
         data = resp.json()
-        all_records.extend(data.get("value", []))
-        url = data.get("odata.nextLink")
-        params = {}  # subsequent pages embed params in the nextLink URL
+        batch = data.get("value", [])
+        all_records.extend(batch)
+        if len(batch) < page_size:
+            break
+        skip += page_size
 
     return pd.DataFrame(all_records)

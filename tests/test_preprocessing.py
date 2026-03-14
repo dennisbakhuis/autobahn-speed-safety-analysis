@@ -18,7 +18,6 @@ def raw_unfallatlas_df() -> pd.DataFrame:
             "UKATEGORIE": [1, 2, 3, 1],
             "UART": [1, 2, 3, 7],
             "UWOCHENTAG": [2, 4, 6, 1],
-            "INN_ORT": [0, 0, 1, 0],
             "XGCSWGS84": ["13,404954", "13,500000", "52,100000", "9,993682"],
             "YGCSWGS84": ["52,520008", "52,600000", "13,200000", "53,550341"],
             "year": [2020, 2020, 2020, 2021],
@@ -47,11 +46,18 @@ def test_clean_unfallatlas_weekday(raw_unfallatlas_df: pd.DataFrame) -> None:
     assert df["weekday"].iloc[0] == "Monday"
 
 
-def test_clean_unfallatlas_outside_built_up(raw_unfallatlas_df: pd.DataFrame) -> None:
-    df = clean_unfallatlas(raw_unfallatlas_df)
-    assert "outside_built_up_area" in df.columns
-    assert df["outside_built_up_area"].iloc[0] is True
-    assert df["outside_built_up_area"].iloc[2] is False
+def test_clean_unfallatlas_outside_built_up_when_inn_ort_present() -> None:
+    """INN_ORT is optional (not present in all years); column created only when available."""
+    df_with = pd.DataFrame({"INN_ORT": [0, 0, 1], "XGCSWGS84": ["13,4", "13,5", "13,6"],
+                            "YGCSWGS84": ["52,5", "52,6", "52,7"], "year": [2020, 2020, 2020]})
+    cleaned = clean_unfallatlas(df_with)
+    assert "outside_built_up_area" in cleaned.columns
+    assert cleaned["outside_built_up_area"].iloc[0] == True  # noqa: E712
+    assert cleaned["outside_built_up_area"].iloc[2] == False  # noqa: E712
+
+    df_without = pd.DataFrame({"XGCSWGS84": ["13,4"], "YGCSWGS84": ["52,5"], "year": [2020]})
+    cleaned_no = clean_unfallatlas(df_without)
+    assert "outside_built_up_area" not in cleaned_no.columns
 
 
 def test_normalize_to_rate() -> None:
