@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
+import matplotlib.figure
 import matplotlib.pyplot as plt
 import matplotlib.ticker as mticker
 import pandas as pd
@@ -29,7 +30,7 @@ def plot_rate_trend(
     title: str = "Accident/Fatality Rate Trend",
     ylabel: str = "Rate per billion vehicle-km",
     output_path: Path | None = None,
-) -> plt.Figure:
+) -> matplotlib.figure.Figure:
     """Plot accident or fatality rate trends over time, grouped by road type.
 
     Args:
@@ -75,7 +76,7 @@ def plot_rate_comparison(
     title: str = "Rate Comparison",
     ylabel: str = "Rate per billion vehicle-km",
     output_path: Path | None = None,
-) -> plt.Figure:
+) -> matplotlib.figure.Figure:
     """Plot a bar chart comparing rates across road type groups.
 
     Args:
@@ -112,7 +113,7 @@ def plot_severity_heatmap(
     values_col: str = "severity_index",
     title: str = "Severity Index (fatalities per accident)",
     output_path: Path | None = None,
-) -> plt.Figure:
+) -> matplotlib.figure.Figure:
     """Plot a heatmap of severity index over time and across groups.
 
     Args:

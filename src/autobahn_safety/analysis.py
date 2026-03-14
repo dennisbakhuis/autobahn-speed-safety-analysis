@@ -79,7 +79,7 @@ def compare_rates(
         "rate_a": rate_a,
         "rate_b": rate_b,
         "rate_ratio": rate_ratio,
-        "p_value": result.pvalue,
+        "p_value": float(getattr(result, "pvalue")),
     }
 
 
