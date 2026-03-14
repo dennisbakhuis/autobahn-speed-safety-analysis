@@ -3,13 +3,11 @@
 from __future__ import annotations
 
 import io
-import os
 import zipfile
 from pathlib import Path
 
 import pandas as pd
 import requests
-from dotenv import load_dotenv
 from tqdm import tqdm
 
 
@@ -39,7 +37,8 @@ def download_unfallatlas(year: int, output_dir: Path, *, force: bool = False) ->
     # Skip if already downloaded (check for LinRef data file, either .csv or .txt)
     if not force:
         existing = [
-            f for f in output_dir.rglob("*LinRef*")
+            f
+            for f in output_dir.rglob("*LinRef*")
             if f.suffix.lower() in (".csv", ".txt") and f.is_file()
         ]
         if existing:
@@ -63,7 +62,8 @@ def download_unfallatlas(year: int, output_dir: Path, *, force: bool = False) ->
 
     # Find the actual data file (structure varies by year: flat CSV, subdir CSV, or subdir TXT)
     data_files = [
-        f for f in output_dir.rglob("*LinRef*")
+        f
+        for f in output_dir.rglob("*LinRef*")
         if f.suffix.lower() in (".csv", ".txt") and f.is_file()
     ]
     return data_files[0] if data_files else output_dir
@@ -105,11 +105,27 @@ def load_unfallatlas(data_dir: Path, years: list[int]) -> pd.DataFrame:
     # Concat across years — keep only the common core columns to avoid NaN explosion
     # from schema differences between years
     core_cols = [
-        "ULAND", "UREGBEZ", "UKREIS", "UGEMEINDE",
-        "UJAHR", "UMONAT", "USTUNDE", "UWOCHENTAG",
-        "UKATEGORIE", "UART", "UTYP1", "ULICHTVERH",
-        "IstRad", "IstPKW", "IstFuss", "IstKrad", "IstGkfz",
-        "LINREFX", "LINREFY", "XGCSWGS84", "YGCSWGS84",
+        "ULAND",
+        "UREGBEZ",
+        "UKREIS",
+        "UGEMEINDE",
+        "UJAHR",
+        "UMONAT",
+        "USTUNDE",
+        "UWOCHENTAG",
+        "UKATEGORIE",
+        "UART",
+        "UTYP1",
+        "ULICHTVERH",
+        "IstRad",
+        "IstPKW",
+        "IstFuss",
+        "IstKrad",
+        "IstGkfz",
+        "LINREFX",
+        "LINREFY",
+        "XGCSWGS84",
+        "YGCSWGS84",
         "year",
     ]
     available = [c for c in core_cols if any(c in df.columns for df in frames)]
@@ -158,7 +174,10 @@ def download_destatis_timeseries(output_dir: Path, *, force: bool = False) -> Pa
     resp.raise_for_status()
 
     total = int(resp.headers.get("content-length", 0))
-    with open(out_path, "wb") as f, tqdm(total=total, unit="B", unit_scale=True, desc="Destatis timeseries") as pbar:
+    with (
+        open(out_path, "wb") as f,
+        tqdm(total=total, unit="B", unit_scale=True, desc="Destatis timeseries") as pbar,
+    ):
         for chunk in resp.iter_content(chunk_size=8192):
             f.write(chunk)
             pbar.update(len(chunk))
@@ -191,7 +210,7 @@ def load_destatis_autobahn(xlsx_path: Path) -> pd.DataFrame:
     data_rows = []
     for row in rows:
         first = row[0]
-        if isinstance(first, (int, float)) and 1950 <= int(first) <= 2030:
+        if isinstance(first, int | float) and 1950 <= int(first) <= 2030:
             data_rows.append(row)
 
     if not data_rows:
@@ -203,18 +222,21 @@ def load_destatis_autobahn(xlsx_path: Path) -> pd.DataFrame:
     # 5: schwerwiegende_sachschaden | 6+: Verunglückte breakdown
     records = []
     for row in data_rows:
+
         def _int(v):  # noqa: E306
             try:
                 return int(v) if v not in (None, ".", "") else None
             except (ValueError, TypeError):
                 return None
 
-        records.append({
-            "year": _int(row[0]),
-            "accidents_total": _int(row[1]),
-            "accidents_personal_injury": _int(row[2]),
-            "accidents_fatal": _int(row[3]),
-        })
+        records.append(
+            {
+                "year": _int(row[0]),
+                "accidents_total": _int(row[1]),
+                "accidents_personal_injury": _int(row[2]),
+                "accidents_fatal": _int(row[3]),
+            }
+        )
 
     df = pd.DataFrame(records).dropna(subset=["year"])
     df["year"] = df["year"].astype(int)
@@ -281,14 +303,12 @@ def download_bron(
         # Older BRON years (pre-2022) use latin-1; newer years use utf-8
         for enc in ("utf-8", "latin-1"):
             try:
-                df = pd.read_csv(
-                    io.BytesIO(raw), dtype=str, low_memory=False, encoding=enc
-                )
+                df = pd.read_csv(io.BytesIO(raw), dtype=str, low_memory=False, encoding=enc)
                 break
             except UnicodeDecodeError:
                 continue
         else:
-            raise UnicodeDecodeError(f"BRON {year}: could not decode with utf-8 or latin-1")
+            raise ValueError(f"BRON {year}: could not decode with utf-8 or latin-1")
 
     df.to_csv(out_path, index=False)
     print(f"BRON {year}: {len(df):,} records → {out_path.name}")
@@ -346,6 +366,7 @@ def fetch_rws_accidents(
     The direct BRON ZIP download via download_bron() is preferred.
     """
     import warnings
+
     warnings.warn(
         "fetch_rws_accidents is deprecated. Use download_bron() instead for faster bulk downloads.",
         DeprecationWarning,
