@@ -46,3 +46,6 @@ Thumbs.db
 .pytest_cache/
 htmlcov/
 .coverage
+
+# osmx cache
+notebooks/cache
