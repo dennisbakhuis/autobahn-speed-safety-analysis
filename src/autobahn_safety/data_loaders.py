@@ -277,7 +277,18 @@ def download_bron(
                 f"Contents: {zf.namelist()[:10]}"
             )
         with zf.open(candidates[0]) as f:
-            df = pd.read_csv(f, dtype=str, low_memory=False)
+            raw = f.read()
+        # Older BRON years (pre-2022) use latin-1; newer years use utf-8
+        for enc in ("utf-8", "latin-1"):
+            try:
+                df = pd.read_csv(
+                    io.BytesIO(raw), dtype=str, low_memory=False, encoding=enc
+                )
+                break
+            except UnicodeDecodeError:
+                continue
+        else:
+            raise UnicodeDecodeError(f"BRON {year}: could not decode with utf-8 or latin-1")
 
     df.to_csv(out_path, index=False)
     print(f"BRON {year}: {len(df):,} records → {out_path.name}")
