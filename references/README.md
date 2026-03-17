@@ -72,16 +72,8 @@ PDFs marked with ✅ are downloaded in this folder.
 
 ## Netherlands Motorway Safety
 
-**✅ Stipdonk, H., & Reurings, M. (2014).** The effect on road safety of a speed limit increase from 120 to 130 km/h on Dutch motorways. *Accident Analysis & Prevention, 73*, 85–91.
-<https://doi.org/10.1016/j.aap.2014.07.019>
-`Stipdonk_2014_SpeedLimit130_NL.pdf`
-
-**✅ Oei, H. L., & Polak, P. H. (2019).** Speed cameras on motorways in the Netherlands. *Accident Analysis & Prevention, 130*, 21–27.
-<https://doi.org/10.1016/j.aap.2019.04.020>
-`Oei_2019_SpeedCamera_Netherlands.pdf`
-
-**✅ Aarts, L., & Houwing, S. (2015).** Benchmarking road safety performance by grouping local territories: A study in the Netherlands. *Transportation Research Part A, 78*, 490–502.
-<https://doi.org/10.1016/j.tra.2015.04.007>
+**✅ Aarts, L., & Houwing, S. (2015).** Benchmarking road safety performance by grouping local territories: A study in the Netherlands. *Transportation Research Part A, 74*, 174–185.
+<https://doi.org/10.1016/j.tra.2015.02.008>
 `Aarts_2015_Benchmarking_RoadSafety_NL.pdf`
 
 **✅ Wegman, F., Aarts, L., & Bax, C. (2008).** Advancing sustainable safety: National road safety outlook for The Netherlands for 2005–2020. *Safety Science, 46*(2), 323–343.
@@ -102,10 +94,7 @@ PDFs marked with ✅ are downloaded in this folder.
 **Gross, M. (2020).** Speed tourism: The German Autobahn as a tourist destination and location of "unruly rules". *Tourist Studies, 20*(3), 365–382.
 <https://doi.org/10.1177/1468797620919776>
 
-**Wegman, F. (2007).** Road traffic in the Netherlands: Relatively safe but not safe enough. *IATSS Research, 31*(1), 6–19. SWOV Institute for Road Safety Research.
-
-**Page, Y. (2001).** A statistical model to compare road mortality in OECD countries. *Accident Analysis & Prevention, 33*(3), 371–385.
-<https://doi.org/10.1016/S0001-4575(00)00068-7>
+**Kloeden, C. N., McLean, A. J., Moore, V. M., & Ponte, G. (1997).** *Travelling speed and the risk of crash involvement.* NHMRC Road Accident Research Unit, University of Adelaide. (CASR technical report — no DOI; available at casr.adelaide.edu.au)
 
 **Wegman, F., Lynam, D., & Nilsson, G. (2002).** *SUNflower: A comparative study of the developments of road safety in Sweden, the United Kingdom, and the Netherlands.* SWOV, Leidschendam.
 
