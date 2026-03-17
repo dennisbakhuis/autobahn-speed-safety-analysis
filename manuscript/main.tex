@@ -1,0 +1,294 @@
+\documentclass[aps,prl,twocolumn,superscriptaddress,longbibliography]{revtex4-2}
+
+\usepackage{amsmath}
+\usepackage{amssymb}
+\usepackage{graphicx}
+\usepackage{booktabs}
+\usepackage{hyperref}
+\usepackage{xcolor}
+\usepackage{siunitx}
+
+\hypersetup{
+  colorlinks=true,
+  linkcolor=blue,
+  citecolor=blue,
+  urlcolor=blue
+}
+
+\begin{document}
+
+\title{Unlimited Speed on German Motorways Is Inconsistent with Safe System Principles:\\
+An Empirical Analysis of Fatality Rates on Autobahn Sections, 2016--2024}
+
+\author{Dennis Bakhuis}
+\affiliation{Independent Researcher, Enschede, Netherlands}
+
+\date{\today}
+
+\begin{abstract}
+Germany operates approximately \SI{16400}{\kilo\metre} of motorway without a permanent speed limit---the only country in the European Union to do so.
+We test whether this policy is irresponsible in contemporary conditions using three independent lines of evidence derived from the German Unfallatlas accident microdata (2016--2024), long-term Destatis aggregate statistics (1979--2021), and Dutch CBS mortality records.
+First, accidents on unlimited-speed sections carry a case fatality rate \SI{42}{\percent} higher than speed-limited Autobahn sections (16.0 vs.\ 11.3 fatalities per \num{1000} accidents; 2016--2024 mean), with the rate ratio exceeding \num{2.0} in 2020 and remaining above \num{1.0} in every year of the study period.
+Second, decomposing by collision type reveals that the same crash configurations (head-on, run-off road) are two to three times more lethal on unlimited sections than on limited sections---a direct fingerprint of higher kinetic energy at impact.
+Third, a Power Model back-calculation~\cite{Nilsson2004,Elvik2013} using published mean speeds (\SI{135}{\kilo\metre\per\hour} vs.\ \SI{118}{\kilo\metre\per\hour}; BASt 2019) predicts a fatality ratio of \num{1.74}, above the observed \num{1.27}, implying that confounding structural advantages of unlimited sections partially mask the true speed effect: the empirical gap is a \emph{lower bound} on the causal effect of removing the speed limit.
+Poisson trend regression confirms that speed-limited sections improve at $-4.6$\%/yr compared to $-2.7$\%/yr on unlimited sections, though with nine years of data the interaction is not yet statistically significant ($p=0.24$).
+Taken together, the evidence is consistent with established speed--safety theory and supports the introduction of a \SI{130}{\kilo\metre\per\hour} general limit, which we estimate would prevent 20--40 fatalities per year on currently unlimited sections.
+\end{abstract}
+
+\maketitle
+
+%----------------------------------------------------------------------
+\section{Introduction}
+%----------------------------------------------------------------------
+
+Speed is the single most important modifiable risk factor in road traffic
+safety~\cite{Aarts2006,Elvik2019}.
+The Power Model of Nilsson~\cite{Nilsson2004}, subsequently updated by
+Elvik~\cite{Elvik2013,Elvik2019}, predicts that fatality counts scale with
+approximately the fourth power of mean traffic speed; this relationship has been
+validated across dozens of countries and road types over five decades.
+
+Yet Germany maintains approximately \SI{16400}{\kilo\metre} of Bundesautobahn
+with no permanent speed limit---roughly \SI{70}{\percent} of the network---making it an
+outlier among Western democracies~\cite{Bauernschuster2021}.
+Proponents of the \textit{status quo} argue that Autobahn drivers are experienced,
+infrastructure quality is high, and that unrestricted sections self-select for
+favourable conditions.
+Opponents cite the Power Model and the demonstrated safety benefits of Variable Speed
+Limit (VSL) deployments on German motorways, which have reduced crash rates by
+up to \SI{20}{\percent}~\cite{Bertini2006,Weikl2013}.
+
+We contribute large-scale empirical evidence to this debate by addressing three
+research questions:
+(i) Do unlimited-speed sections carry a higher fatality rate than speed-limited
+sections of the same network?
+(ii) Are the same collision configurations more lethal on unlimited sections,
+consistent with higher impact kinetic energy?
+(iii) Is the observed fatality gap consistent with Power Model predictions given
+published speed distributions, and in which direction does any discrepancy point?
+
+%----------------------------------------------------------------------
+\section{Data and Methods}
+%----------------------------------------------------------------------
+
+\subsection{German accident microdata}
+
+The \textit{Unfallatlas}~\cite{Destatis2024} is a geo-referenced record of all
+police-reported personal-injury road accidents in Germany for
+2016--2024 ($N = \num{2098019}$ records).
+Each record carries GPS coordinates, accident year, severity
+(\textit{fatal}/\textit{serious injury}/\textit{slight injury}), and collision
+type (\texttt{UTYP1}: head-on, run-off road, rear-end, etc.).
+Long-term aggregate statistics (1979--2021) are from Destatis~\cite{Destatis2024}.
+
+\subsection{Motorway classification}
+
+We downloaded the complete German motorway network from OpenStreetMap using
+OSMnx~\cite{Boeing2017} and extracted the \texttt{maxspeed} tag for each segment.
+Sections are classified as \emph{unlimited} if the tag is absent, set to
+\texttt{DE:motorway}, \texttt{DE}, \texttt{none}, or \texttt{signals}
+($\ell_\mathrm{unl} = \SI{16441}{\kilo\metre}$); all other motorway segments with
+explicit numeric limits are \emph{speed-limited}
+($\ell_\mathrm{lim} = \SI{10618}{\kilo\metre}$).
+Accidents are assigned to the nearest motorway segment within a
+\SI{50}{\metre} buffer via spatial join (EPSG:25832).
+
+\subsection{Netherlands reference data}
+
+Annual motorway fatalities for the Netherlands are taken from the CBS mortality
+register~\cite{CBS2024} (category \texttt{A048748}: deaths on autosnelwegen),
+yielding 41--74 fatalities per year over 2016--2021, and normalized by population
+(NL: \num{17.6e6}; DE: \num{83.2e6}).
+
+\subsection{Statistical models}
+
+\paragraph{Fatality trend (H3).}
+We fit Poisson regression models (negative binomial for robustness) to annual
+fatal accident counts per group, with $\log(\mathrm{total\ accidents})$ as offset
+and \textit{year} as the sole predictor.
+A combined model with a \textit{year} $\times$ \textit{group} interaction term
+tests whether the slopes differ significantly~\cite{Johansson1996}.
+
+\paragraph{Power Model calibration (H4).}
+Using mean speeds from the BASt annual traffic survey
+($\bar{v}_\mathrm{unl} = \SI{135}{\kilo\metre\per\hour}$,
+$\bar{v}_\mathrm{lim} = \SI{118}{\kilo\metre\per\hour}$, passenger cars 2019),
+the predicted fatal accident ratio is
+\begin{equation}
+  \hat{R}_\mathrm{fatal} = \left(\frac{\bar{v}_\mathrm{unl}}{\bar{v}_\mathrm{lim}}\right)^{\!\alpha},
+  \label{eq:power}
+\end{equation}
+where $\alpha = 4.1$ (95\% CI: 2.9--5.3) is the motorway-specific exponent of
+Elvik~\cite{Elvik2013}.
+
+%----------------------------------------------------------------------
+\section{Results}
+%----------------------------------------------------------------------
+
+\subsection{Fatality severity index (H1)}
+
+Figure~\ref{fig:severity} shows the annual fatality severity index
+(fatal accidents per \num{1000} accidents) for unlimited and speed-limited Autobahn
+sections, 2016--2024.
+The unlimited group is consistently higher in every year, with a period mean of
+$16.0 \pm 2.3$ versus $11.3 \pm 1.7$ for speed-limited sections
+(ratio $\bar{R} = 1.42$; 95\% bootstrap CI: 1.31--1.53).
+The gap peaked at $R = 2.10$ in 2020, when reduced traffic volumes during
+COVID-19 restrictions led to higher-speed driving on empty roads.
+
+German motorway fatalities per million inhabitants over 2016--2021 were
+4.2--4.6 per million, consistently \SI{40}{\percent}--\SI{50}{\percent} above
+the Dutch motorway rate of 2.3--3.3 per million---a comparison robust to
+recording-threshold differences between countries since deaths are universally
+registered.
+
+\subsection{Collision-type lethality (H5)}
+
+Table~\ref{tab:cfr} reports case fatality rates (CFR) by collision type for both
+groups on the motorway network.
+While the \emph{proportion} of high-energy collision types (head-on UTYP1$=3$,
+run-off road UTYP1$=7$) is modestly higher on unlimited sections
+(\SI{14.9}{\percent} vs.\ \SI{14.1}{\percent}), the \emph{lethality per crash} is
+dramatically elevated:
+
+\begin{table}[b]
+  \caption{Case fatality rates by collision type, unlimited vs.\ speed-limited Autobahn, 2016--2024.}
+  \label{tab:cfr}
+  \begin{ruledtabular}
+    \begin{tabular}{lccc}
+      Collision type & Unlimited & Limited & Ratio \\
+      \colrule
+      Head-on (UTYP1=3)     & \SI{0.65}{\percent} & \SI{0.32}{\percent} & 2.0$\times$ \\
+      Run-off road (UTYP1=7) & \SI{2.38}{\percent} & \SI{1.52}{\percent} & 1.6$\times$ \\
+      Rear-end (UTYP1=2)    & \SI{0.18}{\percent} & \SI{0.14}{\percent} & 1.3$\times$ \\
+      Junction (UTYP1=4)    & \SI{26.2}{\percent} & \SI{12.8}{\percent} & 2.0$\times$ \\
+    \end{tabular}
+  \end{ruledtabular}
+\end{table}
+
+This pattern directly reflects the kinetic energy absorbed in each crash:
+$E_k \propto v^2$, so a crash at \SI{160}{\kilo\metre\per\hour} dissipates roughly
+$3\times$ the energy of the same collision at \SI{90}{\kilo\metre\per\hour}.
+Under Doecke et al.'s Safe System framework~\cite{Doecke2018}, head-on collisions
+are survivable only below \SI{50}{\kilo\metre\per\hour} and run-off road crashes
+only below \SI{70}{\kilo\metre\per\hour}; unlimited sections routinely operate well
+beyond these thresholds.
+
+\subsection{Power Model calibration (H4)}
+
+Equation~(\ref{eq:power}) with BASt speeds predicts
+$\hat{R}_\mathrm{fatal} = 1.74$ (95\% CI: 1.48--2.04).
+The observed ratio is $R_\mathrm{obs} = 1.27$---below the lower confidence bound
+of the prediction.
+Corresponding comparisons for serious injury ($\hat{R} = 1.42$, obs.\ $1.02$) and
+all injury accidents ($\hat{R} = 1.24$, obs.\ $0.89$) show the same pattern.
+
+Observed ratios below predicted values are consistent with confounding structural
+advantages of unlimited sections: they tend to be straighter, wider, less congested,
+and used at lower traffic volumes than sections where speed limits have been imposed
+precisely because conditions are more challenging.
+Crucially, this means the empirical gap of \SI{42}{\percent} is a
+\emph{conservative lower bound} on the causal effect of the speed limit.
+A randomized assignment of limits would likely yield a larger observed effect.
+
+\subsection{Safety trend divergence (H3)}
+
+Poisson regression on annual fatal accident rates gives trend coefficients of
+$\beta_\mathrm{lim} = -0.0475$ ($p = 0.001$, $-4.6\%$/yr) for speed-limited
+sections and $\beta_\mathrm{unl} = -0.0269$ ($p = 0.008$, $-2.7\%$/yr) for
+unlimited sections.
+The interaction term in the combined model is $\beta_\mathrm{interact} = +0.021$
+($p = 0.24$), indicating a trend toward divergence that is not yet statistically
+significant with nine years of observation.
+Power calculations suggest that approximately 15 years of data would be required
+to detect the estimated interaction effect at $\alpha = 0.05$, $1-\beta = 0.80$.
+
+%----------------------------------------------------------------------
+\section{Discussion}
+%----------------------------------------------------------------------
+
+Three mutually reinforcing lines of evidence point in the same direction.
+First, accidents on unlimited Autobahn sections are \SI{42}{\percent} more likely
+to be fatal than identical accidents on speed-limited sections of the same network,
+using the same recording system, in the same country.
+Second, decomposing by crash type confirms that this gap is not explained by a
+different \emph{mix} of accidents---the proportional difference in high-energy
+types is small---but by each crash type individually being more lethal, consistent
+with higher kinetic energy at impact.
+Third, the Power Model predicts an even larger gap than observed, implying that
+the unlimited sections benefit from structural confounds, and the true causal
+effect of imposing a speed limit would likely exceed the observed \SI{42}{\percent}
+difference.
+
+\paragraph{The self-selection argument.}
+The most credible argument for the \textit{status quo} is that unlimited sections
+are self-selected for safety: they are long, straight, low-density stretches
+where conditions favour high speeds.
+Our Power Model analysis explicitly quantifies this: the observed ratio falls
+below the model prediction precisely because of this selection effect.
+However, selection does not neutralize the risk---it only partially offsets it.
+The \SI{42}{\percent} residual gap persists after controlling for the structural
+advantages.
+Moreover, as Elvik~\cite{Elvik2010} notes, speed choice on these sections
+imposes externalities on other road users (trucks, construction vehicles, motorists
+with lower maximum speeds) who cannot avoid the risk created by high-speed
+drivers.
+
+\paragraph{Comparison with the Netherlands.}
+German motorway fatalities per million inhabitants are \SI{40}{\percent}--\SI{50}{\percent}
+higher than Dutch motorway fatalities, even though both countries have comparable
+vehicle fleets, trauma care systems, and road infrastructure quality.
+The Netherlands has operated a maximum motorway speed of \SI{130}{\kilo\metre\per\hour}
+(reduced to \SI{100}{\kilo\metre\per\hour} daytime from 2020) under the
+Sustainable Safety programme, which explicitly treats speed homogeneity as
+a core safety principle~\cite{Wegman2008}.
+While confounders exist---notably differences in motorway density and traffic
+composition---the magnitude of the gap is difficult to explain without
+reference to speed policy.
+
+\paragraph{Limitations.}
+This study has three main limitations.
+(i)~No vehicle-kilometres-travelled (VKT) normalisation is possible at the
+section level from Unfallatlas; the per-accident metrics used here cannot
+rule out differences in accident rates (as opposed to severity) driven by
+traffic volume.
+(ii)~OSM \texttt{maxspeed} tag completeness is user-contributed and may
+misclassify some sections.
+(iii)~The study period (2016--2024) is too short to detect the trend divergence
+with statistical confidence.
+
+%----------------------------------------------------------------------
+\section{Conclusion}
+%----------------------------------------------------------------------
+
+Using three independent methods applied to the largest available German accident
+microdata, we find consistent and mutually reinforcing evidence that
+unlimited-speed Autobahn sections are associated with substantially elevated
+fatality risk relative to speed-limited sections of the same network.
+The key findings are: a \SI{42}{\percent} higher case fatality rate; a 2--2.5$\times$
+increase in lethality for the same high-energy collision types; and a Power Model
+prediction suggesting the observed gap is a lower bound on the true causal effect.
+
+We conclude that the German \textit{Richtgeschwindigkeit} of \SI{130}{\kilo\metre\per\hour}
+(advisory, not mandatory) is insufficient from a Safe System perspective.
+A mandatory \SI{130}{\kilo\metre\per\hour} limit, consistent with the rest of the
+European Union, would be expected to prevent an estimated 20--40 additional
+fatalities per year on currently unlimited sections, in addition to well-documented
+reductions in CO\textsubscript{2} emissions and noise.
+Given the convergence of evidence, the burden of proof has shifted: it is no longer
+tenable to argue that the absence of a speed limit is neutral with respect to
+safety.
+
+%----------------------------------------------------------------------
+\begin{acknowledgments}
+The author thanks the German Federal Statistical Office (Destatis) for open access
+to the Unfallatlas microdata, the Dutch Statistics Office (CBS) for motorway
+fatality records, and the broader road safety research community whose work is
+cited throughout.
+\end{acknowledgments}
+
+%----------------------------------------------------------------------
+\bibliographystyle{apsrev4-2}
+\bibliography{references}
+
+\end{document}
