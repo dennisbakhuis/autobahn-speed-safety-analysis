@@ -322,80 +322,74 @@ def fig06() -> None:
 
 
 def fig07() -> None:
-    """Fatal accident density per 100 km of network (DE + NL)."""
-    print("Fig 07: Fatal accidents per 100 km of road per year")
-    df_ua = _load_ua()
-    df_nl = _load_nl()
+    """Motorway fatalities per million inhabitants per year (DE vs NL)."""
+    print("Fig 07: Motorway fatalities per million inhabitants per year")
 
-    # Germany
-    de_mw  = df_ua[df_ua["on_motorway"]]
-    de_unl_fatal = (
-        de_mw[de_mw["on_unlimited"] & (de_mw["severity"] == "fatal")]
-        .groupby("year").size().rename("fatal_unl")
-    )
-    de_lim_fatal = (
-        de_mw[de_mw["on_limited_mw"] & (de_mw["severity"] == "fatal")]
-        .groupby("year").size().rename("fatal_lim")
-    )
-    de_fatal = pd.concat([de_unl_fatal, de_lim_fatal], axis=1).reset_index()
-    de_fatal["density_unl"] = de_fatal["fatal_unl"] / KM_DE_UNLIMITED * 100
-    de_fatal["density_lim"] = de_fatal["fatal_lim"] / KM_DE_LIMITED   * 100
+    # Population constants (source: Germany 2020 census average; Netherlands 2020 CBS average)
+    POP_DE_M = 83.2   # Germany population in millions
+    POP_NL_M = 17.6   # Netherlands population in millions
 
-    # Netherlands
-    nl_fatal = df_nl[["year", "fatal"]].copy()
-    nl_fatal["density_nl"] = nl_fatal["fatal"] / KM_NL * 100
+    # Germany: Destatis Autobahn fatal accidents (whole network)
+    df_de = _load_destatis()
+    de_data = df_de[df_de["year"].between(2016, 2021)][["year", "accidents_fatal"]].copy()
+    de_data["deaths_per_mio"] = de_data["accidents_fatal"] / POP_DE_M
 
-    common_years = sorted(set(de_fatal["year"]) & set(nl_fatal["year"]))
+    # Netherlands: CBS deaths by transport mode
+    # Filter: Geslacht=='T001038' (total), Leeftijd==10000 (all ages),
+    #         WijzeVanDeelname=='A048748' (motorway)
+    cbs_path = DATA_RAW / "netherlands" / "cbs" / "deaths_by_mode.csv"
+    if not cbs_path.exists():
+        raise FileNotFoundError(f"CBS deaths file not found: {cbs_path}")
+    df_cbs = pd.read_csv(cbs_path, sep=",")
+    df_cbs["year"] = df_cbs["Perioden"].str[:4].astype(int)
+    nl_raw = df_cbs[
+        (df_cbs["Geslacht"].str.strip() == "T001038")
+        & (df_cbs["Leeftijd"] == 10000)
+        & (df_cbs["WijzeVanDeelname"].str.strip() == "A048748")
+    ].copy()
+    nl_data = nl_raw[nl_raw["year"].between(2016, 2021)][["year", "Verkeersdoden_1"]].copy()
+    nl_data = nl_data.rename(columns={"Verkeersdoden_1": "deaths"})
+    nl_data["deaths_per_mio"] = nl_data["deaths"] / POP_NL_M
 
-    fig, axes = plt.subplots(1, 2, figsize=(14, 5), sharey=False)
+    # Print summary table
+    print(f"\n  {'Year':>6}  {'DE deaths':>10}  {'DE/mio':>8}  {'NL deaths':>10}  {'NL/mio':>8}")
+    print("  " + "-" * 52)
+    merged = de_data.merge(nl_data, on="year", suffixes=("_de", "_nl"))
+    for _, row in merged.iterrows():
+        print(f"  {int(row['year']):>6}  {int(row['accidents_fatal']):>10}  "
+              f"{row['deaths_per_mio_de']:>8.2f}  "
+              f"{int(row['deaths']):>10}  {row['deaths_per_mio_nl']:>8.2f}")
+    print()
 
-    # Left: full range overlay
-    ax = axes[0]
-    ax.plot(nl_fatal["year"], nl_fatal["density_nl"],
-            marker="o", color="tab:orange", label="NL motorways", linewidth=2)
-    ax.plot(de_fatal["year"], de_fatal["density_unl"],
-            marker="s", color="tab:blue", label="DE unlimited", linewidth=2)
-    ax.plot(de_fatal["year"], de_fatal["density_lim"],
-            marker="^", color="tab:red", label="DE speed-limited",
-            linewidth=2, linestyle="--")
-    ax.set_title("Fatal accident density (full range)", fontsize=12)
+    # Plot
+    fig, ax = plt.subplots(figsize=(10, 6))
+    ax.plot(de_data["year"], de_data["deaths_per_mio"],
+            marker="s", color="#e63946", linewidth=2.5, label="Germany (Autobahn)")
+    ax.plot(nl_data["year"], nl_data["deaths_per_mio"],
+            marker="o", color="#2a9d8f", linewidth=2.5, label="Netherlands (motorway)")
+
+    # Annotate points
+    for _, row in de_data.iterrows():
+        ax.annotate(f"{row['deaths_per_mio']:.1f}",
+                    xy=(row["year"], row["deaths_per_mio"]),
+                    xytext=(0, 8), textcoords="offset points",
+                    ha="center", fontsize=9, color="#e63946")
+    for _, row in nl_data.iterrows():
+        ax.annotate(f"{row['deaths_per_mio']:.1f}",
+                    xy=(row["year"], row["deaths_per_mio"]),
+                    xytext=(0, -16), textcoords="offset points",
+                    ha="center", fontsize=9, color="#2a9d8f")
+
+    ax.set_title("Motorway fatalities per million inhabitants: Germany vs Netherlands",
+                 fontsize=13, fontweight="bold")
     ax.set_xlabel("Year")
-    ax.set_ylabel("Fatal accidents per 100 km")
-    ax.legend()
-
-    # Right: common years only
-    ax2 = axes[1]
-    nl_c = nl_fatal[nl_fatal["year"].isin(common_years)]
-    de_c = de_fatal[de_fatal["year"].isin(common_years)]
-    ax2.plot(nl_c["year"], nl_c["density_nl"],
-             marker="o", color="tab:orange", label="NL motorways", linewidth=2)
-    ax2.plot(de_c["year"], de_c["density_unl"],
-             marker="s", color="tab:blue", label="DE unlimited", linewidth=2)
-    ax2.plot(de_c["year"], de_c["density_lim"],
-             marker="^", color="tab:red", label="DE speed-limited",
-             linewidth=2, linestyle="--")
-    ax2.set_title(
-        f"Fatal accident density (common years: {common_years[0]}–{common_years[-1]})",
-        fontsize=12,
-    )
-    ax2.set_xlabel("Year")
-    ax2.set_ylabel("Fatal accidents per 100 km")
-    ax2.legend()
-
-    fig.suptitle("Fatal Accidents per 100 km of Motorway Network",
-                 fontsize=14, fontweight="bold")
+    ax.set_ylabel("Motorway deaths per million inhabitants")
+    ax.set_xticks(sorted(merged["year"].unique()))
+    ax.legend(fontsize=11)
+    ax.set_ylim(bottom=0)
+    sns.despine()
     plt.tight_layout()
-    _save(fig, "fig07_fatal_accidents_per_100km")
-
-    # Summary table
-    summary = de_fatal[["year", "density_unl", "density_lim"]].rename(
-        columns={"density_unl": "DE_unlimited", "density_lim": "DE_limited"})
-    summary = summary.merge(
-        nl_fatal[["year", "density_nl"]].rename(columns={"density_nl": "NL"}),
-        on="year", how="outer",
-    ).sort_values("year")
-    print("  Fatal accident density (per 100 km / year):")
-    print(summary.to_string(index=False, float_format=lambda x: f"{x:.3f}"))
+    _save(fig, "fig07_motorway_deaths_per_capita")
 
 
 def fig08() -> None:
@@ -491,98 +485,96 @@ def fig09() -> None:
     de_unl_pyr = _pyramid_counts(de_mw[de_mw["on_unlimited"]])
     de_lim_pyr = _pyramid_counts(de_mw[de_mw["on_limited_mw"]])
 
-    # NL: only fatal + material available
-    nl_sub       = df_nl[df_nl["year"].between(2016, 2024)]
-    nl_fatal_n   = int(nl_sub["fatal"].sum())
-    nl_material_n = int(nl_sub["material"].sum())
-    nl_total_n   = nl_fatal_n + nl_material_n
-    nl_pyr = (
-        dict(
+    # NL: use only fatal + serious + slight as denominator (exclude material/property-damage-only)
+    # This makes it comparable to DE injury-accident data which excludes property-damage-only.
+    # Note: serious and slight are not separately recorded in rws_motorway_annual.parquet (=0),
+    # so the NL pyramid reflects 100% fatal among recorded injury accidents.
+    nl_sub        = df_nl[df_nl["year"].between(2016, 2024)]
+    nl_fatal_n    = int(nl_sub["fatal"].sum())
+    nl_serious_n  = int(nl_sub["serious"].sum())
+    nl_slight_n   = int(nl_sub["slight"].sum())
+    nl_total_n    = nl_fatal_n + nl_serious_n + nl_slight_n
+    if nl_total_n > 0:
+        nl_pyr = dict(
             fatal=nl_fatal_n,
-            material=nl_material_n,
-            pct_fatal    = nl_fatal_n    / nl_total_n * 100,
-            pct_material = nl_material_n / nl_total_n * 100,
+            serious=nl_serious_n,
+            slight=nl_slight_n,
+            total=nl_total_n,
+            pct_fatal   = nl_fatal_n   / nl_total_n * 100,
+            pct_serious = nl_serious_n / nl_total_n * 100,
+            pct_slight  = nl_slight_n  / nl_total_n * 100,
         )
-        if nl_total_n > 0 else None
-    )
+    else:
+        nl_pyr = None
 
-    # Print summary
+    # Print summary — verify each group sums to 100%
     print(f"\n  {'Group':<28} {'Fatal':>8} {'Serious':>8} {'Slight':>8} {'Total':>8}"
-          f"  {'%Fatal':>7} {'%Serious':>8} {'%Slight':>8}")
-    print("  " + "-" * 88)
+          f"  {'%Fatal':>7} {'%Serious':>8} {'%Slight':>8}  {'Sum%':>6}")
+    print("  " + "-" * 100)
     for lbl, d in [("DE unlimited Autobahn", de_unl_pyr),
                    ("DE speed-limited Autobahn", de_lim_pyr)]:
+        row_sum = d["pct_fatal"] + d["pct_serious"] + d["pct_slight"]
         print(f"  {lbl:<28} {d['fatal']:>8,} {d['serious']:>8,} {d['slight']:>8,} "
               f"{d['total']:>8,}  {d['pct_fatal']:>6.2f}% {d['pct_serious']:>7.2f}% "
-              f"{d['pct_slight']:>7.2f}%")
+              f"{d['pct_slight']:>7.2f}%  {row_sum:>5.1f}%")
     if nl_pyr:
-        print(f"  {'NL (fatal vs prop-damage)':<28} {nl_pyr['fatal']:>8,} {'N/A':>8} "
-              f"{'N/A':>8} {nl_total_n:>8,}  {nl_pyr['pct_fatal']:>6.2f}%"
-              f" {'N/A':>7} {'N/A':>7}")
+        row_sum = nl_pyr["pct_fatal"] + nl_pyr["pct_serious"] + nl_pyr["pct_slight"]
+        print(f"  {'NL (injury accidents only)':<28} {nl_pyr['fatal']:>8,} "
+              f"{nl_pyr['serious']:>8,} {nl_pyr['slight']:>8,} {nl_pyr['total']:>8,}  "
+              f"{nl_pyr['pct_fatal']:>6.2f}% {nl_pyr['pct_serious']:>7.2f}% "
+              f"{nl_pyr['pct_slight']:>7.2f}%  {row_sum:>5.1f}%")
+        print("  Note: NL BRON data does not separately record serious/slight injury accidents")
+        print("        on motorways; serious=0, slight=0 → pyramid shows 100% fatal.")
     print()
 
-    # Plot
-    fig, axes = plt.subplots(1, 2, figsize=(14, 5))
+    # Plot — unified layout showing all 3 groups with 3-bar pyramid
+    groups   = ["DE unlimited", "DE speed-limited", "NL motorway"]
+    pyrs     = [de_unl_pyr, de_lim_pyr, nl_pyr if nl_pyr else dict(
+        pct_fatal=0.0, pct_serious=0.0, pct_slight=0.0)]
+    pct_fatal = [p["pct_fatal"]   for p in pyrs]
+    pct_ser   = [p["pct_serious"] for p in pyrs]
+    pct_sli   = [p["pct_slight"]  for p in pyrs]
+    y_pos, bar_h = np.arange(len(groups)), 0.55
 
-    # Panel 1: DE injury pyramid
-    groups_de = ["DE unlimited", "DE speed-limited"]
-    pct_fatal = [de_unl_pyr["pct_fatal"],  de_lim_pyr["pct_fatal"]]
-    pct_ser   = [de_unl_pyr["pct_serious"], de_lim_pyr["pct_serious"]]
-    pct_sli   = [de_unl_pyr["pct_slight"],  de_lim_pyr["pct_slight"]]
-    y_pos, bar_h = np.arange(len(groups_de)), 0.5
+    fig, ax = plt.subplots(figsize=(12, 5))
+    bars_f  = ax.barh(y_pos, pct_fatal, bar_h, label="Fatal",         color="#d62728")
+    bars_s  = ax.barh(y_pos, pct_ser,   bar_h, left=pct_fatal,        label="Serious", color="#ff7f0e")
+    bars_sl = ax.barh(y_pos, pct_sli,   bar_h,
+                      left=[a + b for a, b in zip(pct_fatal, pct_ser)],
+                      label="Slight", color="#aec7e8")
 
-    ax = axes[0]
-    ax.barh(y_pos, pct_fatal, bar_h, label="Fatal",   color="#d62728")
-    ax.barh(y_pos, pct_ser,   bar_h, left=pct_fatal,  label="Serious", color="#ff7f0e")
-    ax.barh(y_pos, pct_sli,   bar_h,
-            left=[a + b for a, b in zip(pct_fatal, pct_ser)],
-            label="Slight", color="#aec7e8")
     ax.set_yticks(y_pos)
-    ax.set_yticklabels(groups_de)
-    ax.set_xlabel("Share of injury accidents (%)")
+    ax.set_yticklabels(groups, fontsize=12)
+    ax.set_xlabel("Share of injury accidents (%)", fontsize=11)
     ax.set_xlim(0, 100)
-    ax.set_title("DE: injury severity pyramid\n(fatal / serious / slight)", fontsize=11)
-    ax.legend(loc="lower right")
+    ax.set_title(
+        "Injury Severity Pyramid (2016–2024 pooled)\n"
+        "Denominator: injury accidents only (fatal + serious + slight; excludes property-damage-only)",
+        fontsize=12, fontweight="bold",
+    )
+    ax.legend(loc="lower right", fontsize=10)
 
     # Add percentage labels
     for i, (f, s, sl) in enumerate(zip(pct_fatal, pct_ser, pct_sli)):
-        if f > 1:
+        if f > 0.5:
             ax.text(f / 2, i, f"{f:.1f}%", ha="center", va="center",
                     fontsize=9, color="white", fontweight="bold")
-        if s > 2:
+        if s > 1:
             ax.text(f + s / 2, i, f"{s:.1f}%", ha="center", va="center",
                     fontsize=9, color="white")
-        if sl > 2:
+        if sl > 1:
             ax.text(f + s + sl / 2, i, f"{sl:.1f}%", ha="center", va="center",
                     fontsize=9, color="black")
 
-    # Panel 2: NL fatal vs property-damage
-    ax2 = axes[1]
-    if nl_pyr:
-        ax2.barh([0], [nl_pyr["pct_fatal"]],    bar_h,
-                 label="Fatal",                  color="#d62728")
-        ax2.barh([0], [nl_pyr["pct_material"]], bar_h,
-                 left=[nl_pyr["pct_fatal"]],
-                 label="Property damage only",   color="#c7c7c7")
-        ax2.set_yticks([0])
-        ax2.set_yticklabels(["NL motorways"])
-        ax2.set_xlabel("Share of accidents (%)")
-        ax2.set_xlim(0, 100)
-        ax2.set_title("NL: fatal vs property-damage-only\n(serious/slight not in dataset)",
-                      fontsize=11)
-        ax2.legend(loc="lower right")
-        ax2.text(nl_pyr["pct_fatal"] / 2, 0,
-                 f"{nl_pyr['pct_fatal']:.2f}%",
-                 ha="center", va="center", fontsize=9, color="white", fontweight="bold")
-        ax2.text(nl_pyr["pct_fatal"] + nl_pyr["pct_material"] / 2, 0,
-                 f"{nl_pyr['pct_material']:.1f}%",
-                 ha="center", va="center", fontsize=9, color="black")
-    else:
-        ax2.text(0.5, 0.5, "NL data not available",
-                 transform=ax2.transAxes, ha="center", va="center")
+    # Annotation for NL data limitation
+    if nl_pyr and nl_pyr["pct_slight"] == 0.0:
+        ax.annotate(
+            "NL: serious/slight\nnot recorded separately",
+            xy=(50, 2), ha="center", va="center",
+            fontsize=8, color="#555555", style="italic",
+        )
 
-    fig.suptitle("Injury Severity Pyramid (2016–2024 pooled)",
-                 fontsize=14, fontweight="bold")
+    sns.despine()
     plt.tight_layout()
     _save(fig, "fig09_injury_pyramid")
 
