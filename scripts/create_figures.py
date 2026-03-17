@@ -1,11 +1,12 @@
-"""Generate all analysis figures (fig01–fig09) for the Autobahn speed-safety analysis.
+"""Generate all analysis figures (fig01–fig12) for the Autobahn speed-safety analysis.
 
 Loads processed data from data/processed/ and saves figures to output/figures/.
-Mirrors the logic in notebooks 03–05 and consolidates scripts/03_create_plots.py.
+Mirrors the logic in notebooks 03–06 and consolidates scripts/03_create_plots.py.
 
 Usage (from project root):
-    .venv/bin/python scripts/create_figures.py              # all figures
+    .venv/bin/python scripts/create_figures.py                   # all figures
     .venv/bin/python scripts/create_figures.py --figures 7 8 9   # subset
+    .venv/bin/python scripts/create_figures.py --figures 10 11 12 # hypothesis tests
 """
 
 from __future__ import annotations
@@ -19,6 +20,7 @@ import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
 import seaborn as sns
+import statsmodels.formula.api as smf
 from scipy import stats
 
 # Ensure src/ is importable
@@ -579,17 +581,442 @@ def fig09() -> None:
     _save(fig, "fig09_injury_pyramid")
 
 
+# ── Hypothesis testing figures ────────────────────────────────────────────────
+
+def fig10() -> None:
+    """H3: Diverging safety trends — Poisson regression on annual fatality rates.
+
+    Johansson (1996) method: fatal_count ~ year with log(total) offset.
+    Tests whether limited Autobahn shows a significant downward trend while
+    unlimited does not (or improves more slowly).
+    """
+    print("Fig 10: H3 — Diverging safety trends (Johansson 1996 Poisson regression)")
+    df_ua = _load_ua()
+
+    # Build annual data per group
+    def _annual(df: pd.DataFrame, km: float) -> pd.DataFrame:
+        by_year = (
+            df.groupby("year")
+            .agg(
+                total=("severity", "count"),
+                fatal=("severity", lambda x: (x == "fatal").sum()),
+            )
+            .reset_index()
+        )
+        by_year["fatal_rate"] = by_year["fatal"] / by_year["total"]
+        by_year["log_offset"] = np.log(by_year["total"])
+        by_year["year_c"] = by_year["year"] - by_year["year"].mean()  # centre for numerics
+        return by_year
+
+    df_unl = _annual(df_ua[df_ua["on_unlimited"]], KM_DE_UNLIMITED)
+    df_lim = _annual(df_ua[df_ua["on_limited_mw"]], KM_DE_LIMITED)
+
+    # Fit separate Poisson models
+    results: dict[str, dict] = {}
+    for label, df_grp in [("Unlimited", df_unl), ("Limited", df_lim)]:
+        model = smf.glm(
+            "fatal ~ year_c",
+            data=df_grp,
+            family=__import__("statsmodels.genmod.families", fromlist=["Poisson"]).Poisson(),
+            offset=df_grp["log_offset"],
+        ).fit(disp=False)
+        beta = model.params["year_c"]
+        pval = model.pvalues["year_c"]
+        pct_per_yr = (np.exp(beta) - 1) * 100
+        results[label] = {
+            "model":      model,
+            "beta":       beta,
+            "pval":       pval,
+            "pct_per_yr": pct_per_yr,
+            "df_grp":     df_grp,
+        }
+        print(f"  {label}: β_year = {beta:.4f}, p = {pval:.4f}, "
+              f"%change/yr = {pct_per_yr:+.2f}%")
+
+    # Combined model: fatal ~ year + group + year:group
+    df_unl_c = df_unl.copy(); df_unl_c["group"] = 0  # 0 = limited (reference)
+    df_lim_c = df_lim.copy(); df_lim_c["group"] = 0
+    df_unl_c["group"] = 1   # 1 = unlimited
+    df_combined_m = pd.concat([df_unl_c, df_lim_c], ignore_index=True)
+    model_comb = smf.glm(
+        "fatal ~ year_c + group + year_c:group",
+        data=df_combined_m,
+        family=__import__("statsmodels.genmod.families", fromlist=["Poisson"]).Poisson(),
+        offset=df_combined_m["log_offset"],
+    ).fit(disp=False)
+    interaction_beta = model_comb.params["year_c:group"]
+    interaction_p    = model_comb.pvalues["year_c:group"]
+    print(f"\n  Combined model interaction (year × group):")
+    print(f"  β_interaction = {interaction_beta:.4f}, p = {interaction_p:.4f}")
+    print(f"  {'Significant' if interaction_p < 0.05 else 'Not significant'} "
+          f"divergence in trends (α=0.05)")
+
+    # Fitted values for plotting
+    def _fitted_rate(res: dict) -> pd.Series:
+        df_g = res["df_grp"].copy()
+        pred_log_mu = res["model"].predict(df_g)
+        return pred_log_mu / df_g["total"]
+
+    # Plot
+    fig, ax = plt.subplots(figsize=(11, 6))
+
+    colors = {"Unlimited": "#e63946", "Limited": "#457b9d"}
+    markers = {"Unlimited": "o", "Limited": "s"}
+
+    for label, res in results.items():
+        df_g = res["df_grp"]
+        ax.scatter(df_g["year"], df_g["fatal_rate"] * 1000,
+                   color=colors[label], marker=markers[label],
+                   s=55, zorder=5, label=f"{label} (observed)")
+        fitted = _fitted_rate(res)
+        ax.plot(df_g["year"], fitted * 1000,
+                color=colors[label], linewidth=2, linestyle="--",
+                label=f"{label} fitted: {res['pct_per_yr']:+.1f}%/yr "
+                      f"(p={res['pval']:.3f})")
+
+    ax.set_title(
+        "H3: Annual fatality rate with Poisson trend (Johansson 1996)\n"
+        f"Unlimited: {results['Unlimited']['pct_per_yr']:+.1f}%/yr (p={results['Unlimited']['pval']:.3f}) | "
+        f"Limited: {results['Limited']['pct_per_yr']:+.1f}%/yr (p={results['Limited']['pval']:.3f})\n"
+        f"Interaction β={interaction_beta:.4f} (p={interaction_p:.3f})",
+        fontsize=11, fontweight="bold",
+    )
+    ax.set_xlabel("Year")
+    ax.set_ylabel("Fatalities per 1000 accidents")
+    ax.legend(fontsize=9)
+    sns.despine()
+    plt.tight_layout()
+    _save(fig, "fig10_trend_analysis")
+
+
+def fig11() -> None:
+    """H4: Power Model back-calculation — observed vs predicted severity ratios.
+
+    Uses BASt 2019 speed data and Elvik (2013) motorway exponents to predict
+    accident ratios from the speed difference, then compares to observed.
+    """
+    print("Fig 11: H4 — Power Model back-calculation (Elvik 2013)")
+    df_ua = _load_ua()
+
+    # ── Speed constants (BASt 2019: Verkehr auf Bundesautobahnen annual report) ──
+    V_UNLIMITED = 135.0   # mean speed on unlimited sections (km/h), BASt 2019
+    V_LIMITED   = 118.0   # mean speed on limited sections   (km/h), BASt 2019
+    SPEED_RATIO = V_UNLIMITED / V_LIMITED
+
+    # ── Elvik (2013) motorway exponents with 95% CI ──
+    EXPONENTS = {
+        "Fatal accidents":          {"exp": 4.1, "lo": 2.9, "hi": 5.3},
+        "Serious injury accidents":  {"exp": 2.6, "lo": 2.6, "hi": 2.6},  # point estimate only
+        "All injury accidents":      {"exp": 1.6, "lo": 1.6, "hi": 1.6},
+    }
+
+    # ── Observed ratios from Unfallatlas (unlimited / limited, per km) ──
+    mw_unl = df_ua[df_ua["on_unlimited"]]
+    mw_lim = df_ua[df_ua["on_limited_mw"]]
+
+    n_fatal_unl    = (mw_unl["severity"] == "fatal").sum()
+    n_fatal_lim    = (mw_lim["severity"] == "fatal").sum()
+    n_serious_unl  = (mw_unl["severity"] == "serious_injury").sum()
+    n_serious_lim  = (mw_lim["severity"] == "serious_injury").sum()
+    n_total_unl    = len(mw_unl)
+    n_total_lim    = len(mw_lim)
+
+    # Per-km rates then ratio
+    rate_fatal_unl   = n_fatal_unl   / KM_DE_UNLIMITED
+    rate_fatal_lim   = n_fatal_lim   / KM_DE_LIMITED
+    rate_serious_unl = n_serious_unl / KM_DE_UNLIMITED
+    rate_serious_lim = n_serious_lim / KM_DE_LIMITED
+    rate_total_unl   = n_total_unl   / KM_DE_UNLIMITED
+    rate_total_lim   = n_total_lim   / KM_DE_LIMITED
+
+    obs_fatal   = rate_fatal_unl   / rate_fatal_lim
+    obs_serious = rate_serious_unl / rate_serious_lim
+    obs_total   = rate_total_unl   / rate_total_lim
+
+    OBSERVED = {
+        "Fatal accidents":           obs_fatal,
+        "Serious injury accidents":  obs_serious,
+        "All injury accidents":      obs_total,
+    }
+
+    # ── Predicted ratios ──
+    rows = []
+    for label, ex in EXPONENTS.items():
+        pred_mid = SPEED_RATIO ** ex["exp"]
+        pred_lo  = SPEED_RATIO ** ex["lo"]
+        pred_hi  = SPEED_RATIO ** ex["hi"]
+        obs_val  = OBSERVED[label]
+        rows.append({
+            "severity":   label,
+            "predicted":  pred_mid,
+            "pred_lo":    pred_lo,
+            "pred_hi":    pred_hi,
+            "observed":   obs_val,
+        })
+        print(f"  {label}:")
+        print(f"    Predicted: {pred_mid:.3f} (95% CI {pred_lo:.3f}–{pred_hi:.3f})")
+        print(f"    Observed:  {obs_val:.3f}")
+        interp = "≈ predicted (speed explains gap)" if abs(obs_val - pred_mid) / pred_mid < 0.25 \
+            else ("< predicted (confounding advantages)" if obs_val < pred_mid
+                  else "> predicted (additional speed-independent risks)")
+        print(f"    Interpretation: {interp}")
+
+    df_res = pd.DataFrame(rows)
+
+    # ── Plot ──
+    fig, ax = plt.subplots(figsize=(10, 6))
+    x       = np.arange(len(df_res))
+    width   = 0.32
+    colors  = {"predicted": "#457b9d", "observed": "#e63946"}
+
+    bars_pred = ax.bar(x - width / 2, df_res["predicted"], width,
+                       color=colors["predicted"], label="Power Model prediction", alpha=0.85)
+    bars_obs  = ax.bar(x + width / 2, df_res["observed"],  width,
+                       color=colors["observed"],  label="Observed (per km)", alpha=0.85)
+
+    # Error bars (CI) on predicted
+    err_lo = df_res["predicted"] - df_res["pred_lo"]
+    err_hi = df_res["pred_hi"]   - df_res["predicted"]
+    ax.errorbar(
+        x - width / 2, df_res["predicted"],
+        yerr=[err_lo.values, err_hi.values],
+        fmt="none", color="black", capsize=5, linewidth=1.5,
+        label="95% CI (Elvik 2013 exponent)",
+    )
+
+    ax.bar_label(bars_pred, fmt="%.2f", padding=4, fontsize=9, fontweight="bold")
+    ax.bar_label(bars_obs,  fmt="%.2f", padding=4, fontsize=9, fontweight="bold")
+
+    ax.set_xticks(x)
+    ax.set_xticklabels(df_res["severity"], fontsize=11)
+    ax.set_ylabel("Accident rate ratio (unlimited / limited, per km)", fontsize=11)
+    ax.axhline(1.0, color="grey", linestyle=":", linewidth=1)
+    ax.set_title(
+        f"H4: Power Model vs Observed Accident Rate Ratios\n"
+        f"Speed: {V_UNLIMITED} km/h (unlimited) vs {V_LIMITED} km/h (limited) "
+        f"— BASt 2019 | Elvik (2013) exponents",
+        fontsize=11, fontweight="bold",
+    )
+    ax.legend(fontsize=9)
+    sns.despine()
+    plt.tight_layout()
+    _save(fig, "fig11_power_model_check")
+
+
+def fig12() -> None:
+    """H5: Crash type distribution — Safe System threshold analysis (Doecke 2018).
+
+    Tests whether unlimited sections have a higher proportion of high-energy
+    crash types (head-on: UTYP1=3, run-off: UTYP1=7).
+    Also computes case fatality rate by crash type × speed regime.
+    """
+    print("Fig 12: H5 — Crash type distribution / Safe System threshold (Doecke 2018)")
+    df_ua = _load_ua()
+
+    # Filter to motorway accidents only
+    mw = df_ua[df_ua["on_motorway"]].copy()
+
+    # ── UTYP1 groupings ──
+    # High-energy (unsafe at high speed per Doecke 2018)
+    #   3 = head-on collision, 7 = run-off road
+    # Medium-energy:
+    #   2 = rear-end/sideswipe same direction, 6 = stationary traffic collision
+    # Other: 1=parked vehicle, 4=junction, 5=entering vehicle
+    def _energy_group(utyp1: int) -> str:
+        if utyp1 in (3, 7):
+            return "High-energy\n(head-on, run-off)"
+        if utyp1 in (2, 6):
+            return "Medium-energy\n(rear-end, stationary)"
+        return "Other"
+
+    mw["energy_group"] = mw["UTYP1"].map(_energy_group)
+    mw["is_fatal"]     = (mw["severity"] == "fatal").astype(int)
+
+    # ── Stacked bar: proportion of each collision type ──
+    mw_unl = mw[mw["on_unlimited"]].copy()
+    mw_lim = mw[mw["on_limited_mw"]].copy()
+
+    utyp_labels = {
+        1: "Parked vehicle (1)",
+        2: "Rear-end / sideswipe (2)",
+        3: "Head-on (3)",
+        4: "Junction (4)",
+        5: "Entering vehicle (5)",
+        6: "Stationary traffic (6)",
+        7: "Run-off road (7)",
+    }
+
+    def _utyp_pct(sub: pd.DataFrame) -> pd.Series:
+        counts = sub["UTYP1"].value_counts()
+        pct = (counts / counts.sum() * 100).reindex(range(1, 8), fill_value=0.0)
+        return pct
+
+    pct_unl = _utyp_pct(mw_unl)
+    pct_lim = _utyp_pct(mw_lim)
+
+    # Chi-squared test for independence
+    contingency = pd.DataFrame({"unlimited": mw_unl["UTYP1"].value_counts(),
+                                 "limited":   mw_lim["UTYP1"].value_counts()}).fillna(0)
+    chi2, chi2_p, chi2_dof, _ = stats.chi2_contingency(contingency.values)
+    print(f"\n  Chi-squared test (UTYP1 distribution, unlimited vs limited):")
+    print(f"  χ²={chi2:.2f}, df={chi2_dof}, p={chi2_p:.2e}")
+
+    # High-energy proportions
+    he_unl = pct_unl[[3, 7]].sum()
+    he_lim = pct_lim[[3, 7]].sum()
+    print(f"\n  High-energy crash type proportions:")
+    print(f"    Unlimited: {he_unl:.1f}%  |  Limited: {he_lim:.1f}%  |  "
+          f"Δ = {he_unl - he_lim:+.1f}pp")
+
+    # ── Case fatality rates by crash type × speed regime ──
+    cfr_rows = []
+    for utyp, ulabel in utyp_labels.items():
+        for grp_label, sub in [("Unlimited", mw_unl), ("Limited", mw_lim)]:
+            s = sub[sub["UTYP1"] == utyp]
+            if len(s) > 0:
+                cfr = s["is_fatal"].mean() * 100
+                cfr_rows.append({
+                    "UTYP1": utyp, "label": ulabel,
+                    "group": grp_label,
+                    "cfr":   cfr,
+                    "n":     len(s),
+                })
+    df_cfr = pd.DataFrame(cfr_rows)
+
+    print("\n  Case fatality rate (%) by crash type:")
+    for utyp in range(1, 8):
+        row_unl = df_cfr[(df_cfr["UTYP1"] == utyp) & (df_cfr["group"] == "Unlimited")]
+        row_lim = df_cfr[(df_cfr["UTYP1"] == utyp) & (df_cfr["group"] == "Limited")]
+        cfr_unl = row_unl["cfr"].values[0] if len(row_unl) else 0.0
+        cfr_lim = row_lim["cfr"].values[0] if len(row_lim) else 0.0
+        n_unl   = row_unl["n"].values[0]   if len(row_unl) else 0
+        n_lim   = row_lim["n"].values[0]   if len(row_lim) else 0
+        print(f"    UTYP1={utyp} {utyp_labels[utyp]:<30}: "
+              f"Unlimited {cfr_unl:.2f}% (n={n_unl:,})  "
+              f"Limited {cfr_lim:.2f}% (n={n_lim:,})")
+
+    # ── Figure: 2 panels ──
+    fig, axes = plt.subplots(1, 2, figsize=(15, 6))
+
+    # Panel 1: stacked bar of UTYP1 proportions
+    ax1 = axes[0]
+    x_pos = np.array([0, 1])
+    bottom_arr = np.zeros(2)
+
+    # Colour scheme: highlight high-energy types
+    type_colors = {
+        1: "#adb5bd",  # grey     — parked vehicle
+        2: "#74b9ff",  # light blue — rear-end
+        3: "#d62728",  # red       — head-on (HIGH ENERGY)
+        4: "#adb5bd",
+        5: "#adb5bd",
+        6: "#636e72",  # dark grey — stationary
+        7: "#ff7675",  # salmon    — run-off (HIGH ENERGY)
+    }
+
+    for utyp in [1, 2, 3, 4, 5, 6, 7]:
+        heights = np.array([pct_unl[utyp], pct_lim[utyp]])
+        bars = ax1.bar(
+            x_pos, heights, 0.5,
+            bottom=bottom_arr,
+            color=type_colors[utyp],
+            label=utyp_labels[utyp],
+            edgecolor="white", linewidth=0.4,
+        )
+        for i, (h, b) in enumerate(zip(heights, bottom_arr)):
+            if h > 3:
+                ax1.text(x_pos[i], b + h / 2, f"{h:.1f}%",
+                         ha="center", va="center", fontsize=8,
+                         color="white" if utyp in (3, 7) else "black",
+                         fontweight="bold" if utyp in (3, 7) else "normal")
+        bottom_arr += heights
+
+    ax1.set_xticks(x_pos)
+    ax1.set_xticklabels(["Unlimited\nAutobahn", "Speed-limited\nAutobahn"], fontsize=11)
+    ax1.set_ylabel("Share of motorway accidents (%)", fontsize=10)
+    ax1.set_title(
+        f"H5: Crash type distribution\n"
+        f"High-energy (red/salmon): Unlimited {he_unl:.1f}%, Limited {he_lim:.1f}%\n"
+        f"χ²={chi2:.1f}, p={chi2_p:.2e}",
+        fontsize=10, fontweight="bold",
+    )
+    ax1.set_ylim(0, 105)
+    ax1.legend(loc="upper right", fontsize=7, ncol=1, framealpha=0.8)
+    ax1.annotate(
+        'Doecke (2018): Safe System threshold\nhead-on: 50 km/h | run-off: 70 km/h',
+        xy=(0.5, 0.03), xycoords='axes fraction',
+        ha='center', fontsize=8, style='italic', color='#555555',
+        bbox=dict(boxstyle='round,pad=0.3', facecolor='#f8f9fa', alpha=0.7),
+    )
+
+    # Panel 2: case fatality rate by crash type × group
+    ax2 = axes[1]
+    utyp_order = list(range(1, 8))
+    x2         = np.arange(len(utyp_order))
+    w2         = 0.35
+
+    cfr_unl_vals = []
+    cfr_lim_vals = []
+    for utyp in utyp_order:
+        row_u = df_cfr[(df_cfr["UTYP1"] == utyp) & (df_cfr["group"] == "Unlimited")]
+        row_l = df_cfr[(df_cfr["UTYP1"] == utyp) & (df_cfr["group"] == "Limited")]
+        cfr_unl_vals.append(row_u["cfr"].values[0] if len(row_u) else 0.0)
+        cfr_lim_vals.append(row_l["cfr"].values[0] if len(row_l) else 0.0)
+
+    b_unl = ax2.bar(x2 - w2 / 2, cfr_unl_vals, w2, color="#e63946",
+                    label="Unlimited", alpha=0.85)
+    b_lim = ax2.bar(x2 + w2 / 2, cfr_lim_vals, w2, color="#457b9d",
+                    label="Speed-limited", alpha=0.85)
+
+    ax2.set_xticks(x2)
+    ax2.set_xticklabels(
+        [utyp_labels[u].split(" (")[0].replace("/", "/\n") for u in utyp_order],
+        fontsize=8,
+    )
+    ax2.set_ylabel("Case fatality rate (%)", fontsize=10)
+    ax2.set_title(
+        "Case fatality rate by collision type\n"
+        "(fatal / total accidents of that type)",
+        fontsize=10, fontweight="bold",
+    )
+    ax2.legend(fontsize=9)
+
+    # Highlight high-energy columns
+    for idx, utyp in enumerate(utyp_order):
+        if utyp in (3, 7):
+            ax2.axvspan(idx - 0.5, idx + 0.5, alpha=0.08, color="red", zorder=0)
+
+    ax2.annotate(
+        "Highlighted: high-energy types\n(head-on=3, run-off=7)",
+        xy=(0.98, 0.97), xycoords='axes fraction',
+        ha='right', va='top', fontsize=8, color='darkred',
+        bbox=dict(boxstyle='round,pad=0.3', facecolor='#fff0f0', alpha=0.8),
+    )
+
+    sns.despine()
+    fig.suptitle(
+        "H5: Safe System crash type analysis (Doecke 2018)\n"
+        "Unlimited vs speed-limited Autobahn sections",
+        fontsize=12, fontweight="bold",
+    )
+    plt.tight_layout()
+    _save(fig, "fig12_crash_type_analysis")
+
+
 # ── Registry ───────────────────────────────────────────────────────────────────
 FIGURE_REGISTRY: dict[int, Callable[[], None]] = {
-    1: fig01,
-    2: fig02,
-    3: fig03,
-    4: fig04,
-    5: fig05,
-    6: fig06,
-    7: fig07,
-    8: fig08,
-    9: fig09,
+    1:  fig01,
+    2:  fig02,
+    3:  fig03,
+    4:  fig04,
+    5:  fig05,
+    6:  fig06,
+    7:  fig07,
+    8:  fig08,
+    9:  fig09,
+    10: fig10,
+    11: fig11,
+    12: fig12,
 }
 
 
