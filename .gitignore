@@ -49,3 +49,21 @@ htmlcov/
 
 # osmx cache
 notebooks/cache
+
+# LaTeX
+*.aux
+*.bbl
+*.blg
+*.fdb_latexmk
+*.fls
+*.log
+*.out
+*.synctex.gz
+*.toc
+*.lof
+*.lot
+*.nav
+*.snm
+*.vrb
+*Notes.bib
+manuscript/main.pdf
